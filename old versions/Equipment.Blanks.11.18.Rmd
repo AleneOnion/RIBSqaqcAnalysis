@@ -1,0 +1,397 @@
+---
+title: "Equipment.Blanks"
+author: "Alene Onion"
+date: "October 3, 2018"
+output:
+  html_document:
+    toc: true
+    toc_depth: 6
+    toc_float: true
+---
+
+```{r setupE, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#file.copy("sections/images", ".", recursive = TRUE)
+```
+
+
+##Equipment Blanks
+Equipment blank fail: result > quantitation limit  
+IT'S IMPORTANT TO NOTE: that the quantitation limit is NOT the reporting limit. It is set by the lab and can vary week to week. The reporting limit is the goal and the quantitation limit is what the lab actually achieved  
+I separated these failures into those that are:  
+
+* 2Q: < 2 x the quantitation limit  
+* 3Q: < 3 x the quantitation limit  
+* 4Q: < 4 x the quantitation limit  
+* 5Q: < 5 x the quantitation limit  
+* Higher5Q: > 5 x the quantitation limit 
+
+Failures do not necessarily mean that we shouldn't use the data. For one, the quantitation limit is determined by the lab and is not consistant. So instead of looking for "hits" we should be looking to see how much of the total sample the EB encompasses. For example:     
+Ohio EPA (https://www.epa.ohio.gov/portals/35/documents/sw_samplingmanual.pdf) offers a table of recommended flags:  
+```{r, echo=FALSE}
+OHIO<-read.csv("data/Ohio.Qualifiers.csv")
+knitr::kable(OHIO)
+rm(OHIO)
+```
+
+Current strategy:
+I propose a two step process:  
+1. Examine the failures to see if there are any field or lab errors that could explain them (with RoseAnn's assistance)  
+2. Identify all the samples that would be flagged according to the OHIO EPA table above  
+
+##### Failures per project
+```{r message=FALSE, warning=FALSE, results='asis'}
+#create pivot table from this table
+library(reshape2)
+library(knitr)
+#% failure per project
+table<-dcast(EB,project~pass)
+table$percFAIL<-(signif(((table$`2Q`+table$`3Q`+table$`4Q`+table$`5Q`+table$Higher5Q)/(table$`2Q`+table$`3Q`+table$`4Q`+table$`5Q`+table$Higher5Q+table$pass)),2))*100
+table<-table[order(-table$percFAIL),]
+#print table
+knitr::kable(table)
+
+rm(table)
+```
+
+##### Info from SDGs
+Conclusions drawn from reading lab reports  
+Only a few instances worth noting from lab reports  
+```{r, echo=FALSE}
+SDG<-read.csv("data/SDG.csv")
+SDG<-SDG[SDG$issue!="",]
+knitr::kable(SDG)
+rm(SDG)
+```
+
+##### Plotting Equipment blanks to understand underlying noise  
+
+I only plotted parameters which had failures in equipment blanks but included all the results (NA converted to 0) 
+The horizontal line is at the quantitation limit (IT"S IMPORTANT TO NOTE: that the quantiation limit varies from week to week so it should not be considered a bar of succes)s  
+The purpose of these plots is to see if there's an underlying level of noise that we would consider acceptable and define as the new reporting limit  
+
+```{r message=FALSE, warning=FALSE, results='asis'}
+EBt<-EB
+#convert non-detects to 0
+EBt$result_value <- ifelse(EBt$lab_qualifiers=="U",0,EBt$result_value)
+EBt$result_value <- ifelse(EBt$lab_qualifiers=="UN",0,EBt$result_value)
+EBt$result_value <- ifelse(EBt$lab_qualifiers=="UE",0,EBt$result_value)
+
+#Creating a date without year
+EBt$sample_date <- as.Date(EBt$sample_date,"%m/%d/%Y")
+#Create a new column for sampling month
+EBt$day <- format(EBt$sample_date,"%j")
+
+#create blank data frame to fill in at samples not collected
+day<-100
+result_value<-0
+blank<-data.frame(day,result_value)
+day<-350
+result_value<-0
+blank2<-data.frame(day,result_value)
+blank<-merge(blank,blank2,all=TRUE)
+rm(list=c('day','result_value','blank2'))
+
+#now plot the EBt result value / day for each param with the project a different color
+#pull only those parameters with failures
+params<-EBt[EBt$pass!="pass",]
+params<-unique(params$chemical_name)
+nparams<-length(params)
+
+for(i in 1:nparams){
+  temp<-EBt[EBt$chemical_name==params[i],]
+  screening<-temp[temp$project=="screening",]
+  if(is.na(screening$result_value[1])){
+    screening<-blank
+  }
+  routine<-temp[temp$project=="routine",]
+  if(is.na(routine$result_value[1])){
+    routine<-blank
+  }
+  y2018<-temp[temp$project=="2018",]
+  if(is.na(y2018$result_value[1])){
+    y2018<-blank
+  }  
+  wallkill<-temp[temp$project=="wallkill",]
+  if(is.na(wallkill$result_value[1])){
+    wallkill<-blank
+  }
+  reporting<-temp$quantitation_limit[1]
+  #plot the result values
+  plot(routine$day,routine$result_value,type="p",lwd=4,col="forestgreen",main=params[i],xlab="day of year",ylab="equipment blank result value")
+  lines(screening$day,screening$result_value,type="p",lwd=4,col="deepskyblue")
+  lines(y2018$day,y2018$result_value,type="p",lwd=4,col="gray0")
+  lines(wallkill$day,wallkill$result_value,type="p",lwd=4,col="darkmagenta")
+  legend("topleft",legend=c("screening","routine","2018","wallkill","reporting limit"),pch=c(19,19,19,19,3),col=c("deepskyblue","forestgreen","gray0","darkmagenta","gray0"))
+  abline(h=c(reporting))
+  rm(list=c('temp','screening','routine','y2018','wallkill','reporting'))
+}
+rm(list=c('EBt','params','nparams','i'))
+```
+
+
+##### comparing EB hits to the reuslt values    
+I calculated the percent the EB value makes up of the result value  
+As a reminder, Ohio EPA rejects data which is less than 3x the equipment blank. Unfortunately, that means many of our nutrient readings would be rejected. I think this is a 
+consquence, however, of very low readings: even a slight equipment blank reading would be a large percentage of a nutrient result since these results are so small to begin with.  
+Scott Kishbaugh thought this might be a problem. I don't currently have a sollution and am looking into it.  
+only Routine and Wallkill done so far simply because that's all I've been able to associate blanks to   
+```{r, echo=FALSE}
+#first associate blanks with the samples using the associate file
+associate<-read.csv("data/associate.csv")
+associate<-merge(associate,data,by=c("project","sample_name"),all=TRUE)
+associate<-unique(associate[c("project","sample_name","lab_sdg","chemical_name","sample_date","result_value","quantitation_limit","method_detection_limit","detection_limit_unit","lab_qualifiers","associated.blank")])
+EBm<-EB
+names(EBm)[names(EBm)=="sample_name"]<-"associated.blank"
+associate<-merge(associate,EBm,by=c("project","associated.blank","chemical_name"))
+rm(EBm)
+#restrict to only those fields that will merge with the routine associated file below
+associate<-unique(associate[c('project','chemical_name','sample_name','lab_sdg.x','sample_date.x','result_value.x','quantitation_limit.x','method_detection_limit.x','lab_qualifiers.x','lab_sdg.y','sample_date.y','result_value.y','pass','lab_qualifiers.y')])
+names(associate)[names(associate)=="quantitation_limit.x"]<-"quantitation_limit"
+names(associate)[names(associate)=="method_detection_limit.x"]<-"method_detection_limit"
+
+#do this separately for routine samples since they have dissolved and non-dissolved samples you need to associate them by region rather than sample id
+#associate region to the data file
+associateR<-read.csv("data/associateRoutine.csv")
+associateR<-merge(associateR,data,by=c("project","sample_name"),all=TRUE)
+associateR<-unique(associateR[c("project","sample_name","lab_sdg","chemical_name","sample_date","result_value","quantitation_limit","method_detection_limit","detection_limit_unit","lab_qualifiers","region")])
+#associate region to the EB samples now
+associateREB<-read.csv("data/associateRoutineEB.csv")
+EBm<-EB
+EBm<-merge(associateREB,EBm,by=c("project","sample_name"),all=TRUE)
+associateR<-merge(associateR,EBm,by=c("project","region","chemical_name"))
+rm(list=c('EBm','associateREB'))
+associateR<-associateR[!is.na(associateR$region),]
+#restrict to only those fields that overlap with the associate file
+associateR<-unique(associateR[c('project','chemical_name','sample_name.x','lab_sdg.x','sample_date.x','result_value.x','quantitation_limit.x','method_detection_limit.x','lab_qualifiers.x','lab_sdg.y','sample_date.y','result_value.y','pass','lab_qualifiers.y')])
+names(associateR)[names(associateR)=="sample_name.x"]<-"sample_name"
+
+#merge the two associate tables
+associate<-merge(associate,associateR,all=TRUE)
+rm(associateR)
+
+
+#remove U values
+associate<-associate[associate$lab_qualifiers.y!="U",]
+#remove passing EBs
+associate<-associate[associate$pass!="pass",]
+
+#calculate the percent the EB makes up of each result value
+associate$perc<-(associate$result_value.y/associate$result_value.x)*100
+
+#Creating a date without year
+associate$sample_date.x <- as.Date(associate$sample_date.x,"%m/%d/%Y")
+#Create a new column for sampling month
+associate$day <- format(associate$sample_date.x,"%j")
+
+#create blank data frame to fill in at samples not collected
+day<-100
+perc<-0
+blank<-data.frame(day,perc)
+day<-350
+perc<-0
+blank2<-data.frame(day,perc)
+blank<-merge(blank,blank2,all=TRUE)
+rm(list=c('day','perc','blank2'))
+
+#now plot the associate result value / day for each param with the project a different color
+#pull only those parameters with failures
+params<-unique(associate$chemical_name)
+nparams<-length(params)
+
+for(i in 1:nparams){
+  temp<-associate[associate$chemical_name==params[i],]
+  screening<-temp[temp$project=="screening",]
+  if(is.na(screening$result_value.x[1])){
+    screening<-blank
+  }
+  routine<-temp[temp$project=="routine",]
+  if(is.na(routine$result_value.x[1])){
+    routine<-blank
+  }
+  y2018<-temp[temp$project=="2018",]
+  if(is.na(y2018$result_value.x[1])){
+    y2018<-blank
+  }  
+  wallkill<-temp[temp$project=="wallkill",]
+  if(is.na(wallkill$result_value.x[1])){
+    wallkill<-blank
+  }
+  #plot the percent makeup
+  plot(routine$day,routine$perc,type="p",lwd=4,col="forestgreen",main=params[i],xlab="day of year",ylab="equipment blank percent of result")
+  lines(screening$day,screening$perc,type="p",lwd=4,col="deepskyblue")
+  lines(y2018$day,y2018$perc,type="p",lwd=4,col="gray0")
+  lines(wallkill$day,wallkill$perc,type="p",lwd=4,col="darkmagenta")
+  legend("topleft",legend=c("screening","routine","2018","wallkill"),pch=c(19,19,19,19),col=c("deepskyblue","forestgreen","gray0","darkmagenta"))
+  rm(list=c('temp','screening','routine','y2018','wallkill'))
+}
+rm(list=c('params','nparams','i'))
+```
+
+#####Comparing EB to duplciates  
+My theory is that the duplicate samples measure the variance in sampling. Therefore, if there are EB within the variance observed in the duplicate sampling, then these EB hits should not be a concern.  
+```{r, echo=FALSE}
+#remove values that are NA
+dups<-duplicates[!is.na(duplicates$Parent.dup_diff),]
+dups$Parent.dup_diff<-abs(dups$Parent.dup_diff)
+#create an EB file with the same chemical names as the duplciate file
+du<-unique(dups[c('chemical_name','cas_rn')])
+blanks<-merge(du,EB,by=('chemical_name'),all=FALSE)
+rm(du)
+#read in reporting limits
+rlimits<-read.csv("data/reporting.limits.csv")
+blanks<-merge(blanks,rlimits,by=c('chemical_name'),all=FALSE)
+#remove parameters that aren't covered by the blanks
+blanks<-blanks[!is.na(blanks$cas_rn),]
+#convert NA values to 0 in results
+#convert non-detects to 0
+blanks$result_value <- ifelse(blanks$lab_qualifiers=="U",0,blanks$result_value)
+blanks$result_value <- ifelse(blanks$lab_qualifiers=="UN",0,blanks$result_value)
+blanks$result_value <- ifelse(blanks$lab_qualifiers=="UE",0,blanks$result_value)
+
+#for the parameter list only, remove those parameters that don't exceed the quantitation limit
+bl<-blanks[blanks$pass!="pass",]
+params<-unique(bl$chemical_name)
+nparams<-length(params)
+
+library(ggplot2)
+
+for(i in 1:nparams){
+  dup<-dups[dups$chemical_name==params[i],]
+  dup<-dup[!is.na(dup$Parent.dup_diff),]
+  ebs<-blanks[blanks$chemical_name==params[i],]
+  ebs<-ebs[!is.na(ebs$result_value),]
+  #pull the top hinge of the box plot as a possible threshold
+  bpstat<-boxplot.stats(dup$Parent.dup_diff)
+  #title
+  ti<-"Boxplot of Duplicate Differences, Scatter of EB readings"
+  #manual legend
+  legendR<-paste("reporting limt=",ebs$reporting_limit[1],ebs$reporting_units[1],sep=" ")
+  legendO<-paste("onion threshold=",bpstat$stats[4],ebs$detection_limit_unit[1],sep=" ")
+  print(ggplot() +
+    geom_boxplot(data=dup,aes(x=1,y=Parent.dup_diff)) + 
+    geom_hline(yintercept=bpstat$stats[4]) +
+    geom_hline(yintercept=ebs$reporting_limit[1],color="salmon") +
+    annotate("text",x=1.5,y=bpstat$stats[4],color = "black",label=legendO) +
+    annotate("text",x=1.5,y=ebs$reporting_limit[1],color = "red",label=legendR) +
+    geom_jitter(data=ebs,aes(x=2,y=result_value)) +
+    ggtitle(ti) +
+    ylab(params[i]))
+  rm(list=c('dup','ebs','ti','bpstat'))
+}
+rm(list=c('dups','params','nparams','i','blanks'))
+
+```
+
+#######Replotting parameters with outliers  
+I'm replotting these parameters to remove extreme outliers so we can better see the distribution around the limits
+```{r, echo=FALSE}
+#remove values that are NA
+dups<-duplicates[!is.na(duplicates$Parent.dup_diff),]
+dups$Parent.dup_diff<-abs(dups$Parent.dup_diff)
+#create an EB file with the same chemical names as the duplciate file
+du<-unique(dups[c('chemical_name','cas_rn')])
+blanks<-merge(du,EB,by=('chemical_name'),all=FALSE)
+rm(du)
+#read in reporting limits
+rlimits<-read.csv("data/reporting.limits.csv")
+blanks<-merge(blanks,rlimits,by=c('chemical_name'),all=FALSE)
+#remove parameters that aren't covered by the blanks
+blanks<-blanks[!is.na(blanks$cas_rn),]
+#convert NA values to 0 in results
+#convert non-detects to 0
+blanks$result_value <- ifelse(blanks$lab_qualifiers=="U",0,blanks$result_value)
+blanks$result_value <- ifelse(blanks$lab_qualifiers=="UN",0,blanks$result_value)
+blanks$result_value <- ifelse(blanks$lab_qualifiers=="UE",0,blanks$result_value)
+
+#for the parameter list only, remove those parameters that don't exceed the quantitation limit
+bl<-blanks[blanks$pass!="pass",]
+params<-unique(bl$chemical_name)
+nparams<-length(params)
+
+library(ggplot2)
+
+#chloride
+  dup<-dups[dups$chemical_name=="CHLORIDE (AS CL)",]
+  dup<-dup[!is.na(dup$Parent.dup_diff),]
+  ebs<-blanks[blanks$chemical_name=="CHLORIDE (AS CL)",]
+  ebs<-ebs[!is.na(ebs$result_value),]
+  #REMOVE THE VALUES ABOVE 100
+  ebs<-ebs[ebs$result_value<100,]
+  #pull the top hinge of the box plot as a possible threshold
+  bpstat<-boxplot.stats(dup$Parent.dup_diff)
+  #title
+  ti<-"Boxplot of Duplicate Differences, Scatter of EB readings"
+  #manual legend
+  legendR<-paste("reporting limt=",ebs$reporting_limit[1],ebs$reporting_units[1],sep=" ")
+  legendO<-paste("onion threshold=",bpstat$stats[4],ebs$detection_limit_unit[1],sep=" ")
+  print(ggplot() +
+    geom_boxplot(data=dup,aes(x=1,y=Parent.dup_diff)) + 
+    geom_hline(yintercept=bpstat$stats[4]) +
+    geom_hline(yintercept=ebs$reporting_limit[1],color="salmon") +
+    annotate("text",x=1.5,y=bpstat$stats[4],color = "black",label=legendO) +
+    annotate("text",x=1.5,y=ebs$reporting_limit[1],color = "red",label=legendR) +
+    geom_jitter(data=ebs,aes(x=2,y=result_value)) +
+    ggtitle(ti) +
+    ylab("CHLORIDE (AS CL)"))
+  rm(list=c('dup','ebs','ti','bpstat'))
+
+#copper
+  dup<-dups[dups$chemical_name=="Copper",]
+  dup<-dup[!is.na(dup$Parent.dup_diff),]
+  ebs<-blanks[blanks$chemical_name=="Copper",]
+  ebs<-ebs[!is.na(ebs$result_value),]
+  #REMOVE THE VALUES ABOVE 100
+  ebs<-ebs[ebs$result_value<5,]
+  #pull the top hinge of the box plot as a possible threshold
+  bpstat<-boxplot.stats(dup$Parent.dup_diff)
+  #title
+  ti<-"Boxplot of Duplicate Differences, Scatter of EB readings"
+  #manual legend
+  legendR<-paste("reporting limt=",ebs$reporting_limit[1],ebs$reporting_units[1],sep=" ")
+  legendO<-paste("onion threshold=",bpstat$stats[4],ebs$detection_limit_unit[1],sep=" ")
+  print(ggplot() +
+    geom_boxplot(data=dup,aes(x=1,y=Parent.dup_diff)) + 
+    geom_hline(yintercept=bpstat$stats[4]) +
+    geom_hline(yintercept=ebs$reporting_limit[1],color="salmon") +
+    annotate("text",x=1.5,y=bpstat$stats[4],color = "black",label=legendO) +
+    annotate("text",x=1.5,y=ebs$reporting_limit[1],color = "red",label=legendR) +
+    geom_jitter(data=ebs,aes(x=2,y=result_value)) +
+    ggtitle(ti) +
+    ylab("Copper"))
+  rm(list=c('dup','ebs','ti','bpstat'))  
+  
+#zinc
+  dup<-dups[dups$chemical_name=="Zinc",]
+  dup<-dup[!is.na(dup$Parent.dup_diff),]
+  ebs<-blanks[blanks$chemical_name=="Zinc",]
+  ebs<-ebs[!is.na(ebs$result_value),]
+  #REMOVE THE VALUES ABOVE 100
+  ebs<-ebs[ebs$result_value<25,]
+  #pull the top hinge of the box plot as a possible threshold
+  bpstat<-boxplot.stats(dup$Parent.dup_diff)
+  #title
+  ti<-"Boxplot of Duplicate Differences, Scatter of EB readings"
+  #manual legend
+  legendR<-paste("reporting limt=",ebs$reporting_limit[1],ebs$reporting_units[1],sep=" ")
+  legendO<-paste("onion threshold=",bpstat$stats[4],ebs$detection_limit_unit[1],sep=" ")
+  print(ggplot() +
+    geom_boxplot(data=dup,aes(x=1,y=Parent.dup_diff)) + 
+    geom_hline(yintercept=bpstat$stats[4]) +
+    geom_hline(yintercept=ebs$reporting_limit[1],color="salmon") +
+    annotate("text",x=1.5,y=bpstat$stats[4],color = "black",label=legendO) +
+    annotate("text",x=1.5,y=ebs$reporting_limit[1],color = "red",label=legendR) +
+    geom_jitter(data=ebs,aes(x=2,y=result_value)) +
+    ggtitle(ti) +
+    ylab("Zinc"))
+  rm(list=c('dup','ebs','ti','bpstat'))
+  
+rm(list=c('dups','params','nparams','blanks'))
+
+
+
+```
+
+#####Examine the spread of duplicate diferences as the result value grows
+```{r, echo=FALSE}
+```

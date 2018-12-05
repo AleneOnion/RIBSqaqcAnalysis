@@ -1,0 +1,93 @@
+---
+title: "Accuracy"
+author: "Alene Onion"
+date: "October 3, 2018"
+output:
+  html_document:
+    toc: true
+    toc_depth: 6
+    toc_float: true
+---
+
+```{r setuA, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#file.copy("sections/images", ".", recursive = TRUE)
+```
+
+##Accuracy Assessment
+Accuracy fail: designated 'spike' samples are spiked with a known concentration. The difference between the concentration before and after should be the spiked amount +/- the accuracy criteria set forth in table 3 (screening) and table 4 (routine) 
+
+Also check that the lab has met their own lab accuracy criteria which is in the case narrative of the data package.
+
+
+
+
+%%%!!!%%% I had to replace all the blank cells with NA in 'qc_spike_status' and 'qc_dup_spike_status' to make this work  %%%!!!%%%
+
+
+%%%!!!%%% This script is inapropriately examining the lab's MS not our MS %%%!!!%%%
+- The way I figured this out is that i found that there were MSDs in our data whereas we shouldn't have any MSDs done to our spike samples
+- Torganics are measured so low that rather than do a duplicate, they spike the duplicate and produce a spike and a duplicate spike
+- our spikes do asses
+
+
+
+
+
+### Failures per project
+```{r message=FALSE, warning=FALSE, results='asis'}
+#create pivot table from this table
+library(reshape2)
+#failure rate per parameter
+table<-dcast(spike,project~pass)
+table$percFail<-(signif(((table$fail)/(table$fail+table$pass)),2))*100
+#table$percFail<-(signif(((table$ms_OR_msd_fail+table$ms_AND_msd_fail)/(table$ms_OR_msd_fail+table$ms_AND_msd_fail+table$pass)),2))*100
+table<-table[order(-table$percFail),]
+#print table
+knitr::kable(table)
+```
+
+### Failures per parameter
+```{r message=FALSE, warning=FALSE, results='asis'}
+#read routine data
+#create pivot table from this table
+library(reshape2)
+#failure rate per parameter
+table<-dcast(spike,chemical_name~pass)
+table$percFail<-(signif(((table$fail)/(table$fail+table$pass)),2))*100
+#table$percFail<-(signif(((table$ms_OR_msd_fail+table$ms_AND_msd_fail)/(table$ms_OR_msd_fail+table$ms_AND_msd_fail+table$pass)),2))*100
+table<-table[order(-table$percFail),]
+#print table
+knitr::kable(table)
+```
+
+### Failures: parameter by project
+```{r message=FALSE, warning=FALSE, results='asis'}
+#read routine data
+#create pivot table from this table
+spike$chemproject<-paste(spike$chemical_name,spike$project,sep="_")
+library(reshape2)
+library(knitr)
+#failures broken down by project
+table<-dcast(spike,chemproject~pass)
+#table<-table[table$fail != 0,]
+table$percFail<-(signif(((table$fail)/(table$fail+table$pass)),2))*100
+#table$percFail<-(signif(((table$ms_OR_msd_fail+table$ms_AND_msd_fail)/(table$ms_OR_msd_fail+table$ms_AND_msd_fail+table$pass)),2))*100
+#create separate parameter and project columns
+table$parameter<-table$chemproject
+table$parameter<-gsub("_.*","",table$parameter)
+table$project<-table$chemproject
+table$project<-gsub(".*_","",table$project)
+table<-unique(table[c('parameter','project','pass','fail','percFail')])
+library(DT)
+datatable(table, filter = 'top')
+```
+
+### Sortable Table
+```{r message=FALSE, warning=FALSE, results='asis'}
+#read routine data
+#create sortable table
+#first truncate the table
+spike<-unique(spike[c('project','chemical_name','sample_date','sample_name','pass','qc_spike_recovery')])
+library(DT)
+datatable(spike, filter = 'top')

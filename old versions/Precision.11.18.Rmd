@@ -1,0 +1,86 @@
+---
+title: "Equipment.Blanks"
+author: "Alene Onion"
+date: "October 3, 2018"
+output:
+  html_document:
+    toc: true
+    toc_depth: 6
+    toc_float: true
+---
+
+```{r setupP, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#file.copy("sections/images", ".", recursive = TRUE)
+```
+
+##Precision Assessment
+Precision fail: duplicate samples differ by more than the precision criteria    
+The QAPP requires that we analyze duplicates for nutrients, solids, turbidity, conductivity, hardness, metals, and minerals (see section II.5.A.a). This is everything excluding in situ parameters, alkalinity, DOC, and chlorophyll a  
+If the sample is a non detect, the duplicate is spiked and compared to the spike sample. For this reason we need to make sure the duplicate and spike bottles are collected separately.  
+    
+Routine sampling only collected 4 duplicates so Gavin didn't both analyzing these
+
+Again from the Ohio EPA (https://www.epa.ohio.gov/portals/35/documents/sw_samplingmanual.pdf):  
+"This leaves us with a two-tiered system for duplicates. If our %RPD is below the values from our equation (i.e.,
+below the curve), we accept both data points as valid. If the %RPD exceeds the %RPD from the equation, we
+don’t know which value to believe is correct, the sample or the duplicate value, so we must reject (“R” qualify)
+both data points. At that point, particularly if multiple duplicate pairs have been rejected, the sampler(s)
+should look into possible causes for the disagreement and work to minimize those causes for future sampling."
+    
+
+
+### Failures per project
+```{r message=FALSE, warning = FALSE}
+#create pivot table from this table
+library(reshape2)
+#% failure per project
+table<-dcast(duplicates,project~DUP_test)
+names(table)[names(table)=="Var.2"]<-"Blank"
+table$percFAIL<-(signif((table$FAIL/(table$FAIL+table$PASS+table$Blank)),2))*100
+table<-table[order(-table$percFAIL),]
+#print table
+knitr::kable(table)
+```
+
+### Failures per parameter
+```{r message=FALSE, warning = FALSE}
+#create pivot table from this table
+library(reshape2)
+#failure rate per parameter
+table<-dcast(duplicates,chemical_name~DUP_test)
+names(table)[names(table)=="Var.2"]<-"Blank"
+table$percFail<-(signif((table$FAIL/(table$FAIL+table$PASS+table$Blank)),2))*100
+table<-table[order(-table$percFail),]
+#print table
+knitr::kable(table)
+```
+
+### Failures: parameter by project
+```{r message=FALSE, warning = FALSE}
+#create pivot table from this table
+library(reshape2)
+#failures broken down by project
+table<-dcast(duplicates,chemproject~DUP_test)
+names(table)[names(table)=="Var.2"]<-"Blank"
+#table<-table[table$fail != 0,]
+table$percFail<-(signif((table$FAIL/(table$FAIL+table$PASS+table$Blank)),2))*100
+#separating project and parameter
+table$parameter<-table$chemproject
+table$parameter<-gsub("_.*","",table$parameter)
+table$project<-table$chemproject
+table$project<-gsub(".*_","",table$project)
+table<-unique(table[c('parameter','project','FAIL','PASS','Blank','percFail')])
+library(DT)
+datatable(table, filter = 'top')
+```
+
+### Sortable Table
+```{r message=FALSE, warning = FALSE}
+#create sortable table
+#first truncate the table
+dups<-unique(duplicates[c('project','chemical_name','sample_date','sample_name','DUP_test')])
+library(DT)
+datatable(dups, filter = 'top')
+rm(dups)
+```
